@@ -6,32 +6,39 @@ def softmax(v):
     return e/np.sum(e)
 
 
-def rnn_forward(inputs, targets, parameters, vocab_size, h_prev):
-    h, yhat, x = {}, {}, {}
+def data_from_text(data_raw):
+    chars = list(set(data_raw))
+    chars.sort()
+
+    vocab_size = len(chars)
+    print('Data has length {} and consist of {} unique characters.'.format(len(data_raw), vocab_size))
+    ch_to_idx = {ch: i for i, ch in enumerate(chars)}
+    idx_to_char = {i: ch for i, ch in enumerate(chars)}
+    data = [ch_to_idx[ch] for ch in data_raw]
+    return data, vocab_size, idx_to_char
+
+
+def rnn_forward(inputs, parameters, h_prev):
+    h = {}
     u = parameters['U']
     w = parameters['W']
-    v = parameters['V']
-    by = parameters['by']
     bh = parameters['bh']
-    loss = 0
     h[-1] = np.copy(h_prev)
 
-    for t in range(len(inputs)):
-        x_index = inputs[t]
-        y_index = targets[t]
+    seq_length, vocab_size = inputs.shape
+    hidden_size = w.shape[1]
+    assert(u.shape[1] is vocab_size)
+    assert(u.shape[0] is hidden_size)
+    assert(w.shape[0] is hidden_size)
+    assert(bh.shape == (hidden_size, 1))
 
-        # construct a one-hot vector representing the input x
-        xt = np.zeros((vocab_size, 1))
-        xt[x_index] = 1
-        x[t] = xt
-
+    for t in range(seq_length):
+        xt = inputs[[t]].T
         p = np.dot(u, xt) + np.dot(w, h_prev) + bh
         h[t] = np.tanh(p)
-        yhat[t] = softmax(np.dot(v, h[t]) + by)
         h_prev = h[t]
-        loss -= np.log(np.squeeze(yhat[t][y_index]))
-    # loss = np.squeeze(loss)
-    return loss, h, yhat, x  # can probably create x outside this fn
+
+    return h
 
 
 def rnn_backward(yhat, x, target, h, parameters):
@@ -49,7 +56,7 @@ def rnn_backward(yhat, x, target, h, parameters):
     passer = np.zeros_like(h[0].T)
     for t in reversed(range(len(target))):
         yhat_minus_y = yhat[t]
-        yhat_minus_y[target[t]] -= 1
+        yhat_minus_y[np.argmax(target[t])] -= 1
 
         dv += np.outer(yhat_minus_y, h[t])
         dby += yhat_minus_y
@@ -104,20 +111,11 @@ def generate_sample(parameters, h_prev, seed_index, sample_size):
     return sample
 
 
-def train_rnn(data_raw, seq_length, hidden_size, learning_rate, num_epochs, verbose=False):
-    chars = list(set(data_raw))
-    chars.sort()
-
-    vocab_size = len(chars)
-    print('Data has length {} and consist of {} unique characters.'.format(len(data_raw), vocab_size))
-    ch_to_idx = {ch: i for i, ch in enumerate(chars)}
-    idx_to_char = {i: ch for i, ch in enumerate(chars)}
-    data = [ch_to_idx[ch] for ch in data_raw]
-    data_length = len(data)
-
+def train_rnn(data, vocab_size, seq_length, hidden_size, learning_rate, num_epochs, verbose=False):
     # initialize parameters
     parameters = initialize_parameters(hidden_size, vocab_size)
-
+    data = np.eye(vocab_size)[data]
+    data_length = len(data)
     seqs_per_epoch = int(data_length/seq_length)  # will this work if data/seq divides exactly?
 
     # memory for adagrad
@@ -131,9 +129,6 @@ def train_rnn(data_raw, seq_length, hidden_size, learning_rate, num_epochs, verb
 
         if verbose and epoch != 0:
             print('epoch: {}, loss: {}'.format(epoch, loss))
-            # sample_indices = generate_sample(parameters, h_prev, ch_to_idx[' '], 100)
-            # sample = ''.join([idx_to_char[idx] for idx in sample_indices])
-            # print(sample)
 
         for i in range(seqs_per_epoch):
             start = i*seq_length
@@ -143,15 +138,24 @@ def train_rnn(data_raw, seq_length, hidden_size, learning_rate, num_epochs, verb
             inputs = data[start:end]
             targets = data[start+1:end+1]
 
-            # forward pass
-            loss, h, yhat, x = rnn_forward(inputs, targets, parameters, vocab_size, h_prev)
+            # forward pass: recurrent layer
+            h = rnn_forward(inputs, parameters, h_prev)
+
+            # forward pass: output layer
+            v = parameters['V']
+            by = parameters['by']
+            yhat = {t: softmax(np.dot(v, h[t]) + by) for t in range(seq_length)}
+
+            # compute loss
+            losses = [-np.dot(np.log(yhat[t]).T, targets[t]) for t in range(seq_length)]
+            loss = np.array(losses).sum()
 
             # backward pass
-            gradients = rnn_backward(yhat, x, targets, h, parameters)
+            gradients = rnn_backward(yhat, inputs, targets, h, parameters)
 
             # update parameters
             for param, gradient in gradients.items():
                 mgradients[param] += gradient * gradient
                 parameters[param] -= learning_rate * gradient / np.sqrt(mgradients[param] + 1e-8)
             h_prev = h[len(inputs)-1]
-    return parameters, idx_to_char
+    return parameters
