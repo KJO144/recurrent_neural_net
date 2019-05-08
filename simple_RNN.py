@@ -19,11 +19,9 @@ def data_from_text(data_raw):
 
 
 def rnn_forward(inputs, parameters, h_prev):
-    h = {}
     u = parameters['U']
     w = parameters['W']
     bh = parameters['bh']
-    h[-1] = np.copy(h_prev)
 
     seq_length, vocab_size = inputs.shape
     hidden_size = w.shape[1]
@@ -31,6 +29,9 @@ def rnn_forward(inputs, parameters, h_prev):
     assert(u.shape[0] is hidden_size)
     assert(w.shape[0] is hidden_size)
     assert(bh.shape == (hidden_size, 1))
+    assert(h_prev.shape == (hidden_size, 1))
+
+    h = np.zeros((seq_length, hidden_size, 1))
 
     for t in range(seq_length):
         xt = inputs[[t]].T
@@ -41,7 +42,7 @@ def rnn_forward(inputs, parameters, h_prev):
     return h
 
 
-def rnn_backward(yhat, x, target, h, parameters):
+def rnn_backward(yhat, x, target, h, h_prev, parameters):
     '''
     inputs:
         yhat ~
@@ -65,10 +66,12 @@ def rnn_backward(yhat, x, target, h, parameters):
         tmat = np.diag(arg[:, 0])
         yv = np.dot(yhat_minus_y.T, v) + passer
         yvt = np.dot(yv, tmat)
-        dw += np.outer(yvt, h[t-1])
+        h_tm1 = h[t-1] if t !=0 else h_prev
+        dw += np.outer(yvt, h_tm1)
         dbh += yvt.T
         du += np.outer(yvt, x[t])
         passer = np.dot(yvt, w)
+
     gradients = {'U': du, 'W': dw, 'V': dv, 'by': dby, 'bh': dbh}
     return gradients
 
@@ -151,7 +154,7 @@ def train_rnn(data, vocab_size, seq_length, hidden_size, learning_rate, num_epoc
             loss = np.array(losses).sum()
 
             # backward pass
-            gradients = rnn_backward(yhat, inputs, targets, h, parameters)
+            gradients = rnn_backward(yhat, inputs, targets, h, h_prev, parameters)
 
             # update parameters
             for param, gradient in gradients.items():
