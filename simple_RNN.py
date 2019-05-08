@@ -28,13 +28,12 @@ def rnn_forward(inputs, parameters, h_prev):
     assert(u.shape[1] is vocab_size)
     assert(u.shape[0] is hidden_size)
     assert(w.shape[0] is hidden_size)
-    assert(bh.shape == (hidden_size, 1))
-    assert(h_prev.shape == (hidden_size, 1))
+    assert(bh.shape == (hidden_size,))
+    assert(h_prev.shape == (hidden_size,))
 
-    h = np.zeros((seq_length, hidden_size, 1))
-
+    h = np.zeros((seq_length, hidden_size))
     for t in range(seq_length):
-        xt = inputs[[t]].T
+        xt = inputs[t]
         p = np.dot(u, xt) + np.dot(w, h_prev) + bh
         h[t] = np.tanh(p)
         h_prev = h[t]
@@ -54,7 +53,7 @@ def rnn_backward(yhat, x, target, h, h_prev, parameters):
     by = parameters['by']
     dv, dby, dw, dbh, du = np.zeros_like(v), np.zeros_like(by), np.zeros_like(w), np.zeros_like(bh), np.zeros_like(u)
 
-    passer = np.zeros_like(h[0].T)
+    passer = np.zeros_like(h[0])
     for t in reversed(range(len(target))):
         yhat_minus_y = yhat[t]
         yhat_minus_y[np.argmax(target[t])] -= 1
@@ -63,7 +62,7 @@ def rnn_backward(yhat, x, target, h, h_prev, parameters):
         dby += yhat_minus_y
 
         arg = 1 - h[t] * h[t]
-        tmat = np.diag(arg[:, 0])
+        tmat = np.diag(arg)
         yv = np.dot(yhat_minus_y.T, v) + passer
         yvt = np.dot(yv, tmat)
         h_tm1 = h[t-1] if t !=0 else h_prev
@@ -82,8 +81,8 @@ def initialize_parameters(hidden_size, vocab_size):
     u = np.random.randn(hidden_size, vocab_size) * fac  # input to hidden
     w = np.random.randn(hidden_size, hidden_size) * fac  # hidden to hidden
     v = np.random.randn(vocab_size, hidden_size) * fac  # hidden to output
-    bh = np.zeros((hidden_size, 1))  # bias of hidden activation
-    by = np.zeros((vocab_size, 1))  # bias of output neuron
+    bh = np.zeros((hidden_size))  # bias of hidden activation
+    by = np.zeros((vocab_size))  # bias of output neuron
 
     parameters = {'U': u, 'W': w, 'V': v, 'by': by, 'bh': bh}
     return parameters
@@ -99,7 +98,7 @@ def generate_sample(parameters, h_prev, seed_index, sample_size):
     by = parameters['by']
 
     vocab_size = u.shape[1]
-    x = np.zeros((vocab_size, 1))
+    x = np.zeros((vocab_size))
     x[seed_index] = 1
     sample = []
     h = h_prev
@@ -109,7 +108,7 @@ def generate_sample(parameters, h_prev, seed_index, sample_size):
 
         index = np.random.choice(range(vocab_size), p=yhat.ravel())
         sample.append(index)
-        x = np.zeros((vocab_size, 1))
+        x = np.zeros((vocab_size))
         x[index] = 1
     return sample
 
@@ -128,7 +127,7 @@ def train_rnn(data, vocab_size, seq_length, hidden_size, learning_rate, num_epoc
 
     for epoch in range(num_epochs):
         # initialize hidden state
-        h_prev = np.zeros((hidden_size, 1))
+        h_prev = np.zeros((hidden_size))
 
         if verbose and epoch != 0:
             print('epoch: {}, loss: {}'.format(epoch, loss))
