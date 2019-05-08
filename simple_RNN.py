@@ -65,7 +65,7 @@ def rnn_backward(yhat, x, target, h, h_prev, parameters):
         tmat = np.diag(arg)
         yv = np.dot(yhat_minus_y.T, v) + passer
         yvt = np.dot(yv, tmat)
-        h_tm1 = h[t-1] if t !=0 else h_prev
+        h_tm1 = h[t-1] if t != 0 else h_prev
         dw += np.outer(yvt, h_tm1)
         dbh += yvt.T
         du += np.outer(yvt, x[t])
@@ -81,8 +81,8 @@ def initialize_parameters(hidden_size, vocab_size):
     u = np.random.randn(hidden_size, vocab_size) * fac  # input to hidden
     w = np.random.randn(hidden_size, hidden_size) * fac  # hidden to hidden
     v = np.random.randn(vocab_size, hidden_size) * fac  # hidden to output
-    bh = np.zeros((hidden_size))  # bias of hidden activation
-    by = np.zeros((vocab_size))  # bias of output neuron
+    bh = np.zeros(hidden_size)  # bias of hidden activation
+    by = np.zeros(vocab_size)  # bias of output neuron
 
     parameters = {'U': u, 'W': w, 'V': v, 'by': by, 'bh': bh}
     return parameters
@@ -98,7 +98,7 @@ def generate_sample(parameters, h_prev, seed_index, sample_size):
     by = parameters['by']
 
     vocab_size = u.shape[1]
-    x = np.zeros((vocab_size))
+    x = np.zeros(vocab_size)
     x[seed_index] = 1
     sample = []
     h = h_prev
@@ -108,7 +108,7 @@ def generate_sample(parameters, h_prev, seed_index, sample_size):
 
         index = np.random.choice(range(vocab_size), p=yhat.ravel())
         sample.append(index)
-        x = np.zeros((vocab_size))
+        x = np.zeros(vocab_size)
         x[index] = 1
     return sample
 
@@ -127,7 +127,7 @@ def train_rnn(data, vocab_size, seq_length, hidden_size, learning_rate, num_epoc
 
     for epoch in range(num_epochs):
         # initialize hidden state
-        h_prev = np.zeros((hidden_size))
+        h_prev = np.zeros(hidden_size)
 
         if verbose and epoch != 0:
             print('epoch: {}, loss: {}'.format(epoch, loss))
@@ -161,3 +161,54 @@ def train_rnn(data, vocab_size, seq_length, hidden_size, learning_rate, num_epoc
                 parameters[param] -= learning_rate * gradient / np.sqrt(mgradients[param] + 1e-8)
             h_prev = h[len(inputs)-1]
     return parameters
+
+
+def initialize_parameters_lstm(hidden_size, vocab_size):
+    np.random.seed(0)
+    fac = 0.01
+    p = {}
+    p['wgx'] = np.random.randn(hidden_size, vocab_size) * fac  # input to g
+    p['wgh'] = np.random.randn(hidden_size, hidden_size) * fac  # hidden to g
+    p['bg'] = np.zeros(hidden_size)  # bias of g
+
+    p['wfx'] = np.random.randn(hidden_size, vocab_size) * fac  # input to f
+    p['wfh'] = np.random.randn(hidden_size, hidden_size) * fac  # hidden to f
+    p['bf'] = np.zeros(hidden_size)  # bias of f
+
+    p['wix'] = np.random.randn(hidden_size, vocab_size) * fac  # input to i
+    p['wih'] = np.random.randn(hidden_size, hidden_size) * fac  # hidden to i
+    p['bi'] = np.zeros(hidden_size)  # bias of i
+
+    p['wox'] = np.random.randn(hidden_size, vocab_size) * fac  # input to o
+    p['woh'] = np.random.randn(hidden_size, hidden_size) * fac  # hidden to o
+    p['bo'] = np.zeros(hidden_size)  # bias of o
+
+    return p
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
+def lstm_forward(inputs, parameters, h_prev, c_prev):
+    p = parameters
+
+    seq_length, vocab_size = inputs.shape
+    hidden_size = p['wgx'].shape[0]
+
+    h = np.zeros((seq_length, hidden_size))
+    c = np.zeros((seq_length, hidden_size))
+
+    for t in range(seq_length):
+        xt = inputs[t]
+        g = np.tanh(np.dot(p['wgx'], xt) + np.dot(p['wgh'], h_prev) + p['bg'])  # cell gate
+        f = sigmoid(np.dot(p['wfx'], xt) + np.dot(p['wfh'], h_prev) + p['bf'])  # forget gate
+        i = sigmoid(np.dot(p['wix'], xt) + np.dot(p['wih'], h_prev) + p['bi'])  # input gate
+        o = sigmoid(np.dot(p['wox'], xt) + np.dot(p['woh'], h_prev) + p['bo'])  # output gate
+
+        c[t] = c_prev * f + i * g
+        h[t] = np.tanh(c[t]) * o
+        h_prev = h[t]
+        c_prev = c[t]
+
+    return h, c
